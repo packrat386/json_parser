@@ -8,9 +8,37 @@
 #include <cctype>
 #include <map>
 #include <optional>
-#include <memory>
+#include <boost/variant.hpp>
+#include <boost/none.hpp>
 
 enum class token_type { TRUE, FALSE, NULL_TOKEN, STRING, NUMBER, LBRACE, RBRACE, LBRACKET, RBRACKET, COLON, COMMA };
+
+std::string token_name(token_type type) {
+  switch(type){
+  case token_type::TRUE :
+    return "TRUE";
+  case token_type::FALSE :
+    return "FALSE";
+  case token_type::NULL_TOKEN :
+    return "NULL_TOKEN";
+  case token_type::STRING :
+    return "STRING";
+  case token_type::NUMBER :
+    return "NUMBER";
+  case token_type::LBRACE :
+    return "LBRACE";
+  case token_type::RBRACE :
+    return "RBRACE";
+  case token_type::LBRACKET :
+    return "LBRACKET";
+  case token_type::RBRACKET :
+    return "RBRACKET";
+  case token_type::COLON :
+    return "COLON";
+  case token_type::COMMA :
+    return "COMMA";
+  }
+}
 
 struct token {
   std::string text;
@@ -165,7 +193,6 @@ std::deque<token> tokenize(std::istream& input)
     }
 
     current = input.get();
-    std::cout << current << std::endl;
 
     if (!input.good()) {
       break;
@@ -179,7 +206,7 @@ std::deque<token> tokenize(std::istream& input)
       tokens.emplace_back(std::string(1, current), token_type::RBRACKET);
       break;
     case '[':
-      tokens.emplace_back(std::string(1, current), token_type::RBRACE);
+      tokens.emplace_back(std::string(1, current), token_type::LBRACE);
       break;
     case ']':
       tokens.emplace_back(std::string(1, current), token_type::RBRACE);
@@ -215,76 +242,170 @@ std::deque<token> tokenize(std::istream& input)
   return tokens;
 }
 
-struct json_null {};
-
 class value {
 public:
-  virtual std::optional<std::map<std::string, value>> to_object() { return std::nullopt; }
-  virtual std::optional<std::vector<value>> to_array() { return std::nullopt; }
-  virtual std::optional<std::string> to_string() { return std::nullopt; }
-  virtual std::optional<double> to_number() { return std::nullopt; }
-  virtual std::optional<bool> to_bool() { return std::nullopt; }
-  virtual std::optional<json_null> to_null() { return std::nullopt; }
-};
-
-class object_value : public value {
-public:
-  object_value(std::map<std::string, value> in_data) :
-    data(in_data)
-  {}
+  value(std::map<std::string, value> m) : data(m) {}
+  value(std::vector<value> v) : data(v) {}
+  value(std::string s) : data(s) {}
+  value(double d) : data(d) {}
+  value(bool b) : data(b) {}
+  value() : data(boost::none) {}
   
-  virtual std::optional<std::map<std::string, value>> to_object() { return data; }
+  value at(std::string key);
+  value at(int i);
+  std::string to_string();
+  double to_number();
+  bool to_bool();
 
+  bool is_object();
+  bool is_array();
+  bool is_string();
+  bool is_number();
+  bool is_boolean();
+  bool is_null();
+
+  void walk();
 private:
-  std::map<std::string, value> data;
+  boost::variant<boost::none_t, bool, double, std::string, std::vector<value>, std::map<std::string, value>> data;
 };
 
-class array_value : public value {
-public:
-  array_value(std::vector<value> in_data) :
-    data(in_data)
-  {}
-  
-  virtual std::optional<std::vector<value>> to_array() { return data; }
-
-private:
-  std::vector<value> data;
-};
-
-class string_value : public value {
-public:
-  string_value(std::string in_data) :
-    data(in_data)
-  {}
-
-  virtual std::optional<std::string> to_string() { return data; }
-private:
-  std::string data;
-};
-
-class number_value : public value {
-public:
-  number_value(double in_data) :
-    data(in_data)
-  {}
-
-  virtual std::optional<double> to_number() { return data; }
-private:
-  double data;
-};
-
-class null_value : public value {
-public:
-  virtual std::optional<json_null> to_null() { return json_null{}; }
-};
-
-value parse_value(deque<token> tokens)
+value value::at(std::string key)
 {
-  auto tok = tokens.pop_front();
+  return boost::strict_get<std::map<std::string,value>>(data).at(key);
+}
 
+value value::at(int i)
+{
+  return boost::strict_get<std::vector<value>>(data).at(i);
+}
+
+std::string value::to_string()
+{
+  return boost::strict_get<std::string>(data);
+}
+
+double value::to_number()
+{
+  return boost::strict_get<double>(data);
+}
+
+bool value::to_bool()
+{
+  return boost::strict_get<bool>(data);
+}
+
+bool value::is_object()
+{
+  return data.which() == 5;
+}
+
+bool value::is_array()
+{
+  return data.which() == 4;
+}
+
+bool value::is_string()
+{
+  return data.which() == 3;
+}
+
+bool value::is_number()
+{
+  return data.which() == 2;
+}
+
+bool value::is_boolean()
+{
+  return data.which() == 1;
+}
+
+bool value::is_null()
+{
+  return data.which() == 0;
+}
+
+value parse_value(std::deque<token>& tokens);
+  
+std::map<std::string, value> read_object(std::deque<token>& tokens)
+{
+  std::map<std::string, value> object;
+
+  while(tokens.front().type != token_type::RBRACKET) {
+    token key = tokens.front();
+    if (key.type != token_type::STRING) {
+      throw std::runtime_error(std::string("Invalid token, expected string, got: ") +  key.text);
+    }
+    tokens.pop_front();
+
+    token colon = tokens.front();
+    if (colon.type != token_type::COLON) {
+      throw std::runtime_error(std::string("Invalid token, expected colon, got: ") + colon.text);
+    }
+    tokens.pop_front();
+
+    value v = parse_value(tokens);
+
+    object[key.text] = v;
+
+    if (tokens.front().type == token_type::RBRACKET) {
+      continue;
+    }
+
+    token comma = tokens.front();
+    if (comma.type != token_type::COMMA) {
+      throw std::runtime_error(std::string("Invalid token, expected comma, got: ") + comma.text);
+    }
+    tokens.pop_front();
+  }
+
+  tokens.pop_front();
+  return object;
+}
+
+std::vector<value> read_array(std::deque<token>& tokens)
+{
+  std::vector<value> values;
+
+  while(tokens.front().type != token_type::RBRACE) {
+    values.push_back(parse_value(tokens));
+
+    if (tokens.front().type == token_type::RBRACE) {
+      continue;
+    }
+    
+    token comma = tokens.front();
+    if (comma.type != token_type::COMMA) {
+      throw std::runtime_error(std::string("Invalid token, expected comma, got: ") + comma.text);
+    }
+    tokens.pop_front();
+  }
+
+  tokens.pop_front();
+  return values;
+}
+
+value parse_value(std::deque<token>& tokens)
+{
+  auto tok = tokens.front();
+  tokens.pop_front();
+  
   switch(tok.type) {
+  case token_type::LBRACKET :
+    return value(read_object(tokens));
+  case token_type::LBRACE :
+    return value(read_array(tokens));
   case token_type::STRING :
-    reu
+    return value(tok.text);
+  case token_type::NUMBER :
+    return value(std::stod(tok.text));
+  case token_type::TRUE :
+    return value(true);
+  case token_type::FALSE :
+    return value(false);
+  case token_type::NULL_TOKEN :
+    return value();
+  default:
+    throw std::runtime_error(std::string("Invalid token, expected value, got: ") +  tok.text);
   }
 }
 
@@ -295,6 +416,15 @@ int main()
 
   std::cout << "Printing tokens" << std::endl;
   for (auto tok : tokens) {
-    std::cout << tok.text << std::endl;
+    std::cout << token_name(tok.type) << ": " << tok.text << std::endl;
   }
+
+  auto parsed = parse_value(tokens);
+
+  std::cout << "query string(.array.1)" << std::endl;
+  std::cout << parsed.at("array").at(1).to_string() << std::endl;  
+  std::cout << "query string(.top)" << std::endl;
+  std::cout << parsed.at("top").to_string() << std::endl;  
+  std::cout << "query number(.number)" << std::endl;
+  std::cout << parsed.at("number").to_number() << std::endl;  
 }
