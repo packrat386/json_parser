@@ -1,0 +1,24 @@
+{
+    "top":"level",
+    "number":1,
+    "complicated_number": 103.5e-12,
+    "true":true,
+    "false":false,
+    "null":null,
+    "escaped":"escaped\\text",
+    "array":[
+        "of",
+        "stuff",
+        {
+            "might":"even",
+            "be":"hashes"
+        }
+    ],
+    "nested":
+    {
+        "super":{
+            "deep":"hash",
+            "empty":""
+        }
+    }
+}
