@@ -54,14 +54,20 @@ std::string read_number(std::istream& input)
   std::string accum;
   char first = input.get();
 
-  if (first == '-' || (isdigit(first) && first != '0')) {
+  if (first == '-' || (isdigit(first))) {
     accum += first;
   } else {
     throw std::runtime_error(std::string("Expected number, got: ") + char(first));
   }
 
-  while (isdigit(input.peek())) {
-    accum += input.get();
+  if (accum  == "0") {
+    if (isdigit(input.peek())) {
+      throw std::runtime_error("Invalid leading zero");      
+    }
+  } else {
+    while (isdigit(input.peek())) {
+      accum += input.get();
+    }
   }
 
   if (input.peek() != '.') {
@@ -409,22 +415,30 @@ value parse_value(std::deque<token>& tokens)
   }
 }
 
-int main()
+value parse_json(std::istream& input)
 {
-  std::ifstream input("test.json");
   auto tokens = tokenize(input);
+  return parse_value(tokens);
+}
 
-  std::cout << "Printing tokens" << std::endl;
-  for (auto tok : tokens) {
-    std::cout << token_name(tok.type) << ": " << tok.text << std::endl;
+int main(int argc, char** argv)
+{
+  if (argc != 2) {
+    throw std::runtime_error("Wrong number of arguments");
   }
 
-  auto parsed = parse_value(tokens);
+  std::ifstream input(argv[1]);
+  parse_json(input);
+}  
 
-  std::cout << "query string(.array.1)" << std::endl;
-  std::cout << parsed.at("array").at(1).to_string() << std::endl;  
-  std::cout << "query string(.top)" << std::endl;
-  std::cout << parsed.at("top").to_string() << std::endl;  
-  std::cout << "query number(.number)" << std::endl;
-  std::cout << parsed.at("number").to_number() << std::endl;  
-}
+// {
+//   std::ifstream input("test.json");
+//   auto tokens = tokenize(input);
+
+//   std::cout << "Printing tokens" << std::endl;
+//   for (auto tok : tokens) {
+//     std::cout << token_name(tok.type) << ": " << tok.text << std::endl;
+//   }
+
+//   auto parsed = parse_value(tokens);
+// }
